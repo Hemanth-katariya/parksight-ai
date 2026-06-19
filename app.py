@@ -311,15 +311,25 @@ def render_sidebar(df: pd.DataFrame):
 
     # ── Gemini API key ────────────────────────────────────────
     st.sidebar.markdown("---")
-    st.sidebar.markdown("##### \U0001F916 AI Configuration")
+    st.sidebar.markdown("##### 🤖 AI Configuration")
+    
+    # Try to find a default key in secrets or env
+    default_key = ""
+    try:
+        if "GEMINI_API_KEY" in st.secrets:
+            default_key = st.secrets["GEMINI_API_KEY"]
+    except Exception:
+        pass
+    if not default_key and os.environ.get("GEMINI_API_KEY"):
+        default_key = os.environ.get("GEMINI_API_KEY")
+        
     gemini_key = st.sidebar.text_input(
         "Gemini API Key",
         type="password",
-        placeholder="Paste your Gemini API key here",
+        value=default_key if default_key else "",
+        placeholder="Using pre-configured key..." if default_key else "Paste your Gemini API key here",
         key="gemini_api_key",
-        help="Optional. Enter a Google Gemini API key to generate AI-powered "
-             "patrol briefings. Without a key, a sophisticated rule-based "
-             "report is used instead.",
+        help="Optional. A pre-configured API key will be used if available. You can override it here by pasting your own.",
     )
     st.session_state['gemini_key'] = gemini_key if gemini_key else None
 
