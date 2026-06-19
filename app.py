@@ -173,100 +173,80 @@ def load_all_data():
     """Master loader — returns all precomputed analytics objects with progress tracking."""
 
     csv = CSV_PATH
-
-    # Determine if the file is invalid or empty
-    is_invalid = False
+    
+    # 1. Validate the existing file using Pandas to ensure it actually contains data
+    is_valid = False
     if os.path.exists(csv):
-        if os.path.getsize(csv) < 1024 * 1024:  # Less than 1MB (must be corrupt or empty placeholder)
-            is_invalid = True
-        else:
-            try:
-                with open(csv, 'r', encoding='utf-8', errors='ignore') as f:
-                    first_line = f.readline()
-                if "<html" in first_line.lower() or "<!doctype" in first_line.lower():
-                    is_invalid = True
-            except Exception:
-                is_invalid = True
-
-    # If the file is invalid, try to delete it. If delete fails (e.g. read-only system on Streamlit Cloud),
-    # dynamically swap the path to a writeable temporary directory.
-    if is_invalid:
         try:
-            os.remove(csv)
+            # Check if it has at least 10 rows to prove it's a real dataset, not a pointer or HTML
+            sample = pd.read_csv(csv, nrows=10)
+            if len(sample) >= 5 and 'created_datetime' in sample.columns:
+                is_valid = True
         except Exception:
-            # File is read-only (Streamlit Cloud git mount). Swap to a writeable temp directory.
-            import tempfile
-            csv = os.path.join(tempfile.gettempdir(), 'parksight_violations.csv')
-            
-            # Now run the same invalidity check on the temp file
-            if os.path.exists(csv):
-                if os.path.getsize(csv) < 1024 * 1024:
-                    os.remove(csv)
-                else:
-                    try:
-                        with open(csv, 'r', encoding='utf-8', errors='ignore') as f:
-                            first_line = f.readline()
-                        if "<html" in first_line.lower() or "<!doctype" in first_line.lower():
-                            os.remove(csv)
-                    except Exception:
-                        try:
-                            os.remove(csv)
-                        except Exception:
-                            pass
+            pass
 
-    # ── Check for CSV / allow upload or auto-download ─────────
-    if not os.path.exists(csv):
-        file_id = "1xyNjOzn9xssUJYao1Mz39j9kac9UOH1M"
-        try:
-            with st.spinner("📥 Downloading dataset from Google Drive (approx. 109MB)... This might take a minute."):
-                import urllib.request
-                import re
-                import http.cookiejar
+    # 2. If it's corrupt/empty, we switch to a writeable temp file and download fresh
+    if not is_valid:
+        import tempfile
+        import shutil
+        csv = os.path.join(tempfile.gettempdir(), 'parksight_violations.csv')
+        
+        # Check if the temp file is valid
+        if os.path.exists(csv):
+            try:
+                sample = pd.read_csv(csv, nrows=10)
+                if len(sample) >= 5 and 'created_datetime' in sample.columns:
+                    is_valid = True
+            except Exception:
+                pass
                 
-                # Cookie jar handles the Google Drive virus warning session cookies
-                cj = http.cookiejar.CookieJar()
-                opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
-                
-                # 1st request to get the confirmation token if the file is too large
-                url = f"https://drive.google.com/uc?export=download&id={file_id}"
-                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-                
-                with opener.open(req) as response:
-                    html = response.read().decode('utf-8', errors='ignore')
-                
-                confirm_token = None
-                match = re.search(r'confirm=([0-9A-Za-z_]+)', html)
-                if match:
-                    confirm_token = match.group(1)
-                    download_url = f"https://drive.google.com/uc?export=download&confirm={confirm_token}&id={file_id}"
-                else:
-                    download_url = url
-                
-                # 2nd request to download the actual raw file contents
-                req = urllib.request.Request(download_url, headers={'User-Agent': 'Mozilla/5.0'})
-                with opener.open(req) as response:
-                    with open(csv, 'wb') as out_file:
-                        out_file.write(response.read())
-            st.toast("✅ Dataset downloaded successfully!")
-            # Rerun so Streamlit processes the newly written file
-            st.rerun()
-        except Exception as e:
-            st.sidebar.error(f"Auto-download failed: {str(e)}")
-            st.sidebar.warning("Please upload the file manually below.")
-            uploaded = st.sidebar.file_uploader(
-                "Upload violation CSV", type=["csv"]
-            )
-            if uploaded is not None:
-                with open(csv, 'wb') as f:
-                    f.write(uploaded.getvalue())
+        # 3. Download if still invalid
+        if not is_valid:
+            file_id = "1xyNjOzn9xssUJYao1Mz39j9kac9UOH1M"
+            try:
+                with st.spinner("📥 Downloading dataset from Google Drive (approx. 109MB)..."):
+                    import urllib.request
+                    import re
+                    import http.cookiejar
+                    
+                    cj = http.cookiejar.CookieJar()
+                    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+                    
+                    url = f"https://drive.google.com/uc?export=download&id={file_id}"
+                    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                    
+                    with opener.open(req) as response:
+                        html = response.read().decode('utf-8', errors='ignore')
+                    
+                    confirm_token = None
+                    match = re.search(r'confirm=([0-9A-Za-z_]+)', html)
+                    if match:
+                        confirm_token = match.group(1)
+                        download_url = f"https://drive.google.com/uc?export=download&confirm={confirm_token}&id={file_id}"
+                    else:
+                        download_url = url
+                    
+                    req = urllib.request.Request(download_url, headers={'User-Agent': 'Mozilla/5.0'})
+                    with opener.open(req) as response:
+                        with open(csv, 'wb') as out_file:
+                            shutil.copyfileobj(response, out_file)
+                            
+                st.toast("✅ Dataset downloaded successfully!")
                 st.rerun()
-            else:
-                st.error(
-                    "### 📁 Data file not found\n\n"
-                    "The automatic dataset downloader failed. Please place **`jan_to_may_police_violation_anonymized.csv`** "
-                    "in the `data/` folder, or upload it manually via the sidebar."
-                )
-                st.stop()
+            except Exception as e:
+                st.sidebar.error(f"Auto-download failed: {str(e)}")
+                st.sidebar.warning("Please upload the file manually below.")
+                uploaded = st.sidebar.file_uploader("Upload violation CSV", type=["csv"])
+                if uploaded is not None:
+                    with open(csv, 'wb') as f:
+                        f.write(uploaded.getvalue())
+                    st.rerun()
+                else:
+                    st.error(
+                        "### 📁 Data file not found\n\n"
+                        "The automatic dataset downloader failed. Please upload it manually via the sidebar."
+                    )
+                    st.stop()
 
     # ── Progress bar for loading pipeline ─────────────────────
     progress = st.progress(0, text="\U0001F504 Initialising ParkSight...")

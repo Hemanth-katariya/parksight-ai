@@ -119,12 +119,25 @@ def load_processed(csv_path: str = None) -> pd.DataFrame:
     otherwise run the full pipeline.
     """
     if os.path.exists(PARQUET_PATH):
-        logger.info('Loading from parquet cache')
-        df = pd.read_parquet(PARQUET_PATH)
-        # Ensure boolean columns after parquet round-trip
-        if 'is_peak' in df.columns:
-            df['is_peak'] = df['is_peak'].astype(bool)
-        if 'is_repeat_offender' in df.columns:
-            df['is_repeat_offender'] = df['is_repeat_offender'].astype(bool)
-        return df
+        try:
+            logger.info('Loading from parquet cache')
+            df = pd.read_parquet(PARQUET_PATH)
+            
+            # Validate cache integrity
+            if len(df) < 100 or 'created_datetime' not in df.columns:
+                raise ValueError("Corrupt parquet cache")
+                
+            # Ensure boolean columns after parquet round-trip
+            if 'is_peak' in df.columns:
+                df['is_peak'] = df['is_peak'].astype(bool)
+            if 'is_repeat_offender' in df.columns:
+                df['is_repeat_offender'] = df['is_repeat_offender'].astype(bool)
+            return df
+        except Exception as e:
+            logger.warning(f"Failed to load parquet cache ({str(e)}). Regenerating...")
+            try:
+                os.remove(PARQUET_PATH)
+            except Exception:
+                pass
+                
     return load_and_clean(csv_path)
