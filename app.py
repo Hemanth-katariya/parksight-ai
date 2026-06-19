@@ -172,8 +172,31 @@ def get_congestion_impact(df, centrality):
 def load_all_data():
     """Master loader — returns all precomputed analytics objects with progress tracking."""
 
-    # ── Check for CSV / allow upload or auto-download ─────────
     csv = CSV_PATH
+    
+    # Check if the file is invalid/corrupt (e.g. contains Google Drive HTML warning page)
+    if os.path.exists(csv):
+        is_invalid = False
+        # If the file size is tiny (e.g., less than 1MB), it's definitely not the 100MB dataset
+        if os.path.getsize(csv) < 1024 * 1024:
+            is_invalid = True
+        else:
+            # Let's peek at the first line
+            try:
+                with open(csv, 'r', encoding='utf-8', errors='ignore') as f:
+                    first_line = f.readline()
+                if "<html" in first_line.lower() or "<!doctype" in first_line.lower():
+                    is_invalid = True
+            except Exception:
+                is_invalid = True
+                
+        if is_invalid:
+            try:
+                os.remove(csv)
+            except Exception:
+                pass
+
+    # ── Check for CSV / allow upload or auto-download ─────────
     if not os.path.exists(csv):
         os.makedirs(os.path.join(ROOT, 'data'), exist_ok=True)
         file_id = "1xyNjOzn9xssUJYao1Mz39j9kac9UOH1M"
