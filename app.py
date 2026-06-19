@@ -173,15 +173,13 @@ def load_all_data():
     """Master loader — returns all precomputed analytics objects with progress tracking."""
 
     csv = CSV_PATH
-    
-    # Check if the file is invalid/corrupt (e.g. contains Google Drive HTML warning page)
+
+    # Determine if the file is invalid or empty
+    is_invalid = False
     if os.path.exists(csv):
-        is_invalid = False
-        # If the file size is tiny (e.g., less than 1MB), it's definitely not the 100MB dataset
-        if os.path.getsize(csv) < 1024 * 1024:
+        if os.path.getsize(csv) < 1024 * 1024:  # Less than 1MB (must be corrupt or empty placeholder)
             is_invalid = True
         else:
-            # Let's peek at the first line
             try:
                 with open(csv, 'r', encoding='utf-8', errors='ignore') as f:
                     first_line = f.readline()
@@ -189,16 +187,35 @@ def load_all_data():
                     is_invalid = True
             except Exception:
                 is_invalid = True
-                
-        if is_invalid:
-            try:
-                os.remove(csv)
-            except Exception:
-                pass
+
+    # If the file is invalid, try to delete it. If delete fails (e.g. read-only system on Streamlit Cloud),
+    # dynamically swap the path to a writeable temporary directory.
+    if is_invalid:
+        try:
+            os.remove(csv)
+        except Exception:
+            # File is read-only (Streamlit Cloud git mount). Swap to a writeable temp directory.
+            import tempfile
+            csv = os.path.join(tempfile.gettempdir(), 'parksight_violations.csv')
+            
+            # Now run the same invalidity check on the temp file
+            if os.path.exists(csv):
+                if os.path.getsize(csv) < 1024 * 1024:
+                    os.remove(csv)
+                else:
+                    try:
+                        with open(csv, 'r', encoding='utf-8', errors='ignore') as f:
+                            first_line = f.readline()
+                        if "<html" in first_line.lower() or "<!doctype" in first_line.lower():
+                            os.remove(csv)
+                    except Exception:
+                        try:
+                            os.remove(csv)
+                        except Exception:
+                            pass
 
     # ── Check for CSV / allow upload or auto-download ─────────
     if not os.path.exists(csv):
-        os.makedirs(os.path.join(ROOT, 'data'), exist_ok=True)
         file_id = "1xyNjOzn9xssUJYao1Mz39j9kac9UOH1M"
         try:
             with st.spinner("📥 Downloading dataset from Google Drive (approx. 109MB)... This might take a minute."):
@@ -231,6 +248,7 @@ def load_all_data():
                     with open(csv, 'wb') as out_file:
                         out_file.write(response.read())
             st.toast("✅ Dataset downloaded successfully!")
+            # Rerun so Streamlit processes the newly written file
             st.rerun()
         except Exception as e:
             st.sidebar.error(f"Auto-download failed: {str(e)}")
