@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'cache')
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
 PARQUET_PATH = os.path.join(CACHE_DIR, 'violations_processed.parquet')
-DEFAULT_CSV = os.path.join(DATA_DIR, 'jan_to_may_police_violation_anonymized.csv')
+DEFAULT_DATA = os.path.join(DATA_DIR, 'raw_dataset.parquet')
 
 
 def _safe_parse_violation(x):
@@ -45,25 +45,28 @@ def _safe_h3(lat, lon, resolution=8):
         return None
 
 
-def load_and_clean(csv_path: str = None) -> pd.DataFrame:
+def load_and_clean(data_path: str = None) -> pd.DataFrame:
     """
-    Load raw CSV, clean data, engineer features, and cache as parquet.
+    Load raw Data (Parquet/CSV), clean data, engineer features, and cache as parquet.
 
     Parameters
     ----------
-    csv_path : str, optional
-        Path to the raw CSV file. Defaults to data/jan_to_may_police_violation_anonymized.csv
+    data_path : str, optional
+        Path to the raw file. Defaults to data/raw_dataset.parquet
 
     Returns
     -------
     pd.DataFrame
         Cleaned and feature-engineered dataframe.
     """
-    if csv_path is None:
-        csv_path = DEFAULT_CSV
+    if data_path is None:
+        data_path = DEFAULT_DATA
 
-    logger.info('Loading CSV from %s', csv_path)
-    df = pd.read_csv(csv_path, low_memory=False)
+    logger.info('Loading Data from %s', data_path)
+    if data_path.endswith('.parquet'):
+        df = pd.read_parquet(data_path)
+    else:
+        df = pd.read_csv(data_path, low_memory=False)
     logger.info('Loaded %d rows', len(df))
 
     # ── Parse timestamps ────────────────────────────────────────
@@ -116,7 +119,7 @@ def load_and_clean(csv_path: str = None) -> pd.DataFrame:
     return df
 
 
-def load_processed(csv_path: str = None) -> pd.DataFrame:
+def load_processed(data_path: str = None) -> pd.DataFrame:
     """
     Return processed dataframe — from parquet cache if available,
     otherwise run the full pipeline.
@@ -143,4 +146,4 @@ def load_processed(csv_path: str = None) -> pd.DataFrame:
             except Exception:
                 pass
                 
-    return load_and_clean(csv_path)
+    return load_and_clean(data_path)

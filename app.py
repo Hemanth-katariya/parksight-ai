@@ -118,13 +118,13 @@ st.markdown(
 #  Cached Data Loaders
 # ════════════════════════════════════════════════════════════════
 
-CSV_PATH = os.path.join(ROOT, 'data', 'jan_to_may_police_violation_anonymized.csv')
+RAW_DATA_PATH = os.path.join(ROOT, 'data', 'raw_dataset.parquet')
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
-def get_processed_data(csv_path: str) -> pd.DataFrame:
+def get_processed_data(data_path: str) -> pd.DataFrame:
     """Load (or build + cache) the cleaned violation dataframe."""
-    return data_pipeline.load_processed(csv_path)
+    return data_pipeline.load_processed(data_path)
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
@@ -172,133 +172,34 @@ def get_congestion_impact(df, centrality):
 def load_all_data():
     """Master loader — returns all precomputed analytics objects with progress tracking."""
 
-    csv = CSV_PATH
+    data_file = RAW_DATA_PATH
     
-    # 1. Validate the existing file using Pandas to ensure it actually contains data
-    is_valid = False
-    if os.path.exists(csv):
-        try:
-            # Check if it has at least 10 rows to prove it's a real dataset, not a pointer or HTML
-            sample = pd.read_csv(csv, nrows=10)
-            if len(sample) >= 5 and 'created_datetime' in sample.columns:
-                is_valid = True
-        except Exception:
-            pass
-
-    # 2. If it's corrupt/empty, we switch to a writeable temp file and download fresh
-    if not is_valid:
-        import tempfile
-        import shutil
-        csv = os.path.join(tempfile.gettempdir(), 'parksight_violations.csv')
-        
-        # Check if the temp file is valid
-        if os.path.exists(csv):
+    # 1. Fallback uploader if the dataset is missing
+    if not os.path.exists(data_file):
+        st.sidebar.error("Bundled dataset not found in `data/raw_dataset.parquet`.")
+        uploaded = st.sidebar.file_uploader("Upload dataset (CSV or Parquet)", type=["csv", "parquet"])
+        if uploaded is not None:
+            import tempfile
+            temp_path = os.path.join(tempfile.gettempdir(), 'uploaded_dataset.' + uploaded.name.split('.')[-1])
             try:
-                sample = pd.read_csv(csv, nrows=10)
-                if len(sample) >= 5 and 'created_datetime' in sample.columns:
-                    is_valid = True
-            except Exception:
-                pass
-                
-        # 3. Download if still invalid
-        if not is_valid:
-            file_id = "1xyNjOzn9xssUJYao1Mz39j9kac9UOH1M"
-            download_success = False
-            error_msg = ""
-            
-            try:
-                with st.spinner("📥 Downloading dataset from Google Drive (approx. 109MB)..."):
-                    try:
-                        import gdown
-                        # Try gdown first since it handles virus warnings automatically
-                        gdown.download(id=file_id, output=csv, quiet=True, fuzzy=True)
-                    except Exception as gd_err:
-                        # Fallback to custom urllib downloader
-                        import urllib.request
-                        import re
-                        import http.cookiejar
-                        import shutil
-                        
-                        cj = http.cookiejar.CookieJar()
-                        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
-                        
-                        url = f"https://drive.google.com/uc?export=download&id={file_id}"
-                        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-                        
-                        with opener.open(req) as response:
-                            html = response.read().decode('utf-8', errors='ignore')
-                        
-                        confirm_token = None
-                        match = re.search(r'confirm=([0-9A-Za-z_]+)', html)
-                        if match:
-                            confirm_token = match.group(1)
-                            download_url = f"https://drive.google.com/uc?export=download&confirm={confirm_token}&id={file_id}"
-                        else:
-                            download_url = url
-                        
-                        req = urllib.request.Request(download_url, headers={'User-Agent': 'Mozilla/5.0'})
-                        with opener.open(req) as response:
-                            with open(csv, 'wb') as out_file:
-                                shutil.copyfileobj(response, out_file)
-
-                # Post-download validation to prevent infinite rerun loops
-                if os.path.exists(csv):
-                    # Check size is reasonable (at least 5MB)
-                    if os.path.getsize(csv) > 5 * 1024 * 1024:
-                        # Check header contains created_datetime and it parses
-                        sample = pd.read_csv(csv, nrows=10)
-                        if len(sample) >= 5 and 'created_datetime' in sample.columns:
-                            download_success = True
-                        else:
-                            error_msg = "Downloaded file is invalid (missing columns or too few rows)."
-                    else:
-                        # Probably downloaded an HTML warning page
-                        with open(csv, 'r', errors='ignore') as f:
-                            first_chars = f.read(200)
-                        if "html" in first_chars.lower() or "doctype" in first_chars.lower():
-                            error_msg = "Google Drive returned a virus scan warning/HTML page instead of the dataset."
-                        else:
-                            error_msg = f"Downloaded file is too small ({os.path.getsize(csv)} bytes)."
-                else:
-                    error_msg = "Download finished but output file does not exist."
-            except Exception as e:
-                error_msg = str(e)
-
-            if download_success:
-                st.toast("✅ Dataset downloaded successfully!")
-                st.rerun()
-            else:
-                # Clean up the corrupt file so we don't try to use it next time
-                if os.path.exists(csv):
-                    try:
-                        os.remove(csv)
-                    except Exception:
-                        pass
-                
-                st.sidebar.error(f"Auto-download failed: {error_msg}")
-                st.sidebar.warning("Please upload the file manually below.")
-                uploaded = st.sidebar.file_uploader("Upload violation CSV", type=["csv"])
-                if uploaded is not None:
-                    try:
-                        with open(csv, 'wb') as f:
-                            f.write(uploaded.getvalue())
-                        st.rerun()
-                    except Exception as upload_err:
-                        st.error(f"Failed to save uploaded file: {str(upload_err)}")
-                        st.stop()
-                else:
-                    st.error(
-                        "### 📁 Data file not found\n\n"
-                        f"The automatic dataset downloader failed: **{error_msg}**\n\n"
-                        "Please upload `jan_to_may_police_violation_anonymized.csv` manually via the sidebar."
-                    )
-                    st.stop()
+                with open(temp_path, 'wb') as f:
+                    f.write(uploaded.getvalue())
+                data_file = temp_path
+            except Exception as upload_err:
+                st.error(f"Failed to save uploaded file: {str(upload_err)}")
+                st.stop()
+        else:
+            st.error(
+                "### 📁 Data file not found\n\n"
+                "The bundled dataset is missing. Please upload it via the sidebar to continue."
+            )
+            st.stop()
 
     # ── Progress bar for loading pipeline ─────────────────────
     progress = st.progress(0, text="\U0001F504 Initialising ParkSight...")
 
     progress.progress(5, text="\U0001F504 Loading & processing violation data...")
-    df = get_processed_data(csv)
+    df = get_processed_data(data_file)
     progress.progress(20, text="\u2705 Data loaded \u2014 Fetching road network...")
 
     edges = get_osm_roads()
