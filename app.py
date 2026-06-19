@@ -176,17 +176,37 @@ def load_all_data():
     csv = CSV_PATH
     if not os.path.exists(csv):
         os.makedirs(os.path.join(ROOT, 'data'), exist_ok=True)
-        gdrive_url = "https://drive.google.com/uc?export=download&id=1xyNjOzn9xssUJYao1Mz39j9kac9UOH1M"
-        
+        file_id = "1xyNjOzn9xssUJYao1Mz39j9kac9UOH1M"
         try:
             with st.spinner("📥 Downloading dataset from Google Drive (approx. 109MB)... This might take a minute."):
                 import urllib.request
-                req = urllib.request.Request(
-                    gdrive_url, 
-                    headers={'User-Agent': 'Mozilla/5.0'}
-                )
-                with urllib.request.urlopen(req) as response, open(csv, 'wb') as out_file:
-                    out_file.write(response.read())
+                import re
+                import http.cookiejar
+                
+                # Cookie jar handles the Google Drive virus warning session cookies
+                cj = http.cookiejar.CookieJar()
+                opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+                
+                # 1st request to get the confirmation token if the file is too large
+                url = f"https://drive.google.com/uc?export=download&id={file_id}"
+                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                
+                with opener.open(req) as response:
+                    html = response.read().decode('utf-8', errors='ignore')
+                
+                confirm_token = None
+                match = re.search(r'confirm=([0-9A-Za-z_]+)', html)
+                if match:
+                    confirm_token = match.group(1)
+                    download_url = f"https://drive.google.com/uc?export=download&confirm={confirm_token}&id={file_id}"
+                else:
+                    download_url = url
+                
+                # 2nd request to download the actual raw file contents
+                req = urllib.request.Request(download_url, headers={'User-Agent': 'Mozilla/5.0'})
+                with opener.open(req) as response:
+                    with open(csv, 'wb') as out_file:
+                        out_file.write(response.read())
             st.toast("✅ Dataset downloaded successfully!")
             st.rerun()
         except Exception as e:
