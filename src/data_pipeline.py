@@ -106,9 +106,12 @@ def load_and_clean(csv_path: str = None) -> pd.DataFrame:
     df['is_repeat_offender'] = df['vehicle_number'].map(vehicle_counts) >= 3
 
     # ── Persist to parquet ──────────────────────────────────────
-    os.makedirs(CACHE_DIR, exist_ok=True)
-    df.to_parquet(PARQUET_PATH, engine='pyarrow', index=False)
-    logger.info('Saved processed data to %s', PARQUET_PATH)
+    try:
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        df.to_parquet(PARQUET_PATH, engine='pyarrow', index=False)
+        logger.info('Saved processed data to %s', PARQUET_PATH)
+    except Exception as e:
+        logger.warning(f"Could not save processed data to parquet cache: {str(e)}")
 
     return df
 
