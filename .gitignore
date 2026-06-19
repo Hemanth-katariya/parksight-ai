@@ -1,0 +1,21 @@
+# Virtual environment
+venv/
+.venv/
+env/
+ENV/
+
+# Python caching & bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local project data and cache (to prevent pushing 100MB+ files)
+data/jan_to_may_police_violation_anonymized.csv
+cache/
+
+# Streamlit config/secrets
+.streamlit/
+
+# OS-generated files
+.DS_Store
+Thumbs.db
