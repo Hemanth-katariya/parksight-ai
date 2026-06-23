@@ -1298,9 +1298,8 @@ def main():
     cluster_stats_f = cluster_stats
 
     # ── Tabs (AI-first ordering) ──────────────────────────────
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "\U0001F52E AI Predictions & Impact",
-        "\U0001F4AC AI Control Room",
         "\U0001F5FA\uFE0F Hotspot Map",
         "\U0001F3AF Enforcement Queue",
         "\U0001F4CA Temporal Patterns",
@@ -1314,22 +1313,23 @@ def main():
         )
 
     with tab2:
-        tab_chatbot(
-            predictions, congestion_summary,
-            junctions_epi_f, xgb_result,
-        )
-
-    with tab3:
         tab_hotspot_map(df_filtered, h3_grid_f, junctions_epi_f, cluster_stats_f)
 
-    with tab4:
+    with tab3:
         tab_enforcement_queue(df_filtered, junctions_epi_f)
 
-    with tab5:
+    with tab4:
         tab_temporal_patterns(df_filtered)
 
-    with tab6:
+    with tab5:
         tab_junction_deep_dive(df_filtered, junctions_epi_f)
+
+    st.markdown("---")
+    # Render the Chatbot pinned to the bottom of the entire screen
+    tab_chatbot(
+        predictions, congestion_summary,
+        junctions_epi_f, xgb_result,
+    )
 
 
 if __name__ == "__main__":
