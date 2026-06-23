@@ -1,0 +1,10 @@
+{
+  "total_rows": 298450,
+  "n_junctions": 168,
+  "n_predictions": 167,
+  "n_clusters": 129,
+  "n_h3_cells": 776,
+  "model_r2": 0.5681,
+  "model_mae": 6.4,
+  "precomputed": true
+}
