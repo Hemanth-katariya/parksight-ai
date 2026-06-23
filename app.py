@@ -410,12 +410,12 @@ def render_sidebar(df: pd.DataFrame):
         default_key = os.environ.get("GEMINI_API_KEY")
         
     gemini_key = st.sidebar.text_input(
-        "Gemini API Key",
+        "Gemini API Key(s)",
         type="password",
         value=default_key if default_key else "",
-        placeholder="Using pre-configured key..." if default_key else "Paste your Gemini API key here",
+        placeholder="Using pre-configured key..." if default_key else "Key1, Key2, Key3...",
         key="gemini_api_key",
-        help="Optional. A pre-configured API key will be used if available. You can override it here by pasting your own.",
+        help="Optional. Enter one or more API keys separated by commas. The system will auto-rotate to the next key if one is rate-limited or exhausted.",
     )
     st.session_state['gemini_key'] = gemini_key if gemini_key else None
 
@@ -1225,26 +1225,34 @@ INSTRUCTIONS:
         # Generate response via Gemini
         with st.chat_message('assistant'):
             with st.spinner('🤖 ParkSight AI is thinking...'):
-                try:
-                    import google.generativeai as genai
-                    genai.configure(api_key=api_key)
-                    model = genai.GenerativeModel('gemini-2.0-flash')
+                keys = [k.strip() for k in api_key.replace(";", ",").split(",") if k.strip()] if api_key else []
+                reply = None
+                last_error = ""
+                for i, key in enumerate(keys):
+                    try:
+                        import google.generativeai as genai
+                        genai.configure(api_key=key)
+                        model = genai.GenerativeModel('gemini-2.0-flash')
 
-                    # Build conversation history for context
-                    history_text = ""
-                    for msg in st.session_state.chat_messages[-6:]:  # Last 6 messages for context
-                        role = "User" if msg['role'] == 'user' else "Assistant"
-                        history_text += f"{role}: {msg['content']}\n\n"
+                        # Build conversation history for context
+                        history_text = ""
+                        for msg in st.session_state.chat_messages[-6:]:  # Last 6 messages for context
+                            role = "User" if msg['role'] == 'user' else "Assistant"
+                            history_text += f"{role}: {msg['content']}\n\n"
 
-                    full_prompt = f"{system_prompt}\n\nCONVERSATION HISTORY:\n{history_text}\nUser: {user_input}\n\nAssistant:"
+                        full_prompt = f"{system_prompt}\n\nCONVERSATION HISTORY:\n{history_text}\nUser: {user_input}\n\nAssistant:"
 
-                    response = model.generate_content(full_prompt)
-                    reply = response.text
-
-                except Exception as e:
+                        response = model.generate_content(full_prompt)
+                        reply = response.text
+                        break  # Success!
+                    except Exception as e:
+                        last_error = str(e)
+                        logger.warning(f"Chatbot Gemini API failed for key #{i+1} (%s)", e)
+                
+                if reply is None:
                     reply = (
-                        f"⚠️ I encountered an error connecting to Gemini: `{str(e)[:100]}`.\n\n"
-                        f"Please check your API key in the sidebar and try again."
+                        f"⚠️ I encountered an error connecting to Gemini (tried {len(keys)} keys): `{last_error[:150]}`.\n\n"
+                        f"Please check your API key(s) in the sidebar and try again."
                     )
 
             st.markdown(reply)

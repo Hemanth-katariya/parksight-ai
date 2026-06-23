@@ -141,35 +141,39 @@ def generate_ai_briefing(
 
     # ── Try Gemini API ──────────────────────────────────────
     if api_key:
-        try:
-            import google.generativeai as genai
-            genai.configure(api_key=api_key)
+        keys = [k.strip() for k in api_key.replace(";", ",").split(",") if k.strip()]
+        last_error = ""
+        for i, key in enumerate(keys):
+            try:
+                import google.generativeai as genai
+                genai.configure(api_key=key)
 
-            model = genai.GenerativeModel('gemini-2.0-flash')
-            prompt = _build_prompt(data_summary)
+                model = genai.GenerativeModel('gemini-2.0-flash')
+                prompt = _build_prompt(data_summary)
 
-            response = model.generate_content(prompt)
-            report_text = response.text
+                response = model.generate_content(prompt)
+                report_text = response.text
 
-            logger.info('AI briefing generated via Gemini API')
-            return {
-                'report': report_text,
-                'source': 'Google Gemini 2.0 Flash',
-                'timestamp': timestamp,
-                'data_summary': data_summary,
-            }
-
-        except Exception as e:
-            logger.warning('Gemini API failed (%s) — using rule-based fallback', e)
-            error_msg = str(e)
-            report = _generate_rule_based(predictions, congestion, epi, metrics)
-            return {
-                'report': report,
-                'source': 'Rule-based (Gemini API failed)',
-                'timestamp': timestamp,
-                'data_summary': data_summary,
-                'error': error_msg,
-            }
+                logger.info(f'AI briefing generated via Gemini API (Key #{i+1})')
+                return {
+                    'report': report_text,
+                    'source': f'Google Gemini 2.0 Flash (Key #{i+1})',
+                    'timestamp': timestamp,
+                    'data_summary': data_summary,
+                }
+            except Exception as e:
+                logger.warning(f'Gemini API failed for key #{i+1} (%s)', e)
+                last_error = str(e)
+        
+        # If all keys failed
+        report = _generate_rule_based(predictions, congestion, epi, metrics)
+        return {
+            'report': report,
+            'source': 'Rule-based (Gemini API failed)',
+            'timestamp': timestamp,
+            'data_summary': data_summary,
+            'error': f"All {len(keys)} API keys failed. Last error: {last_error}",
+        }
 
     # ── Rule-based fallback ─────────────────────────────────
     report = _generate_rule_based(predictions, congestion, epi, metrics)
