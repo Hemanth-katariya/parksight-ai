@@ -1160,6 +1160,86 @@ def _build_chatbot_context(predictions, congestion_summary, junctions_epi, metri
     return "\n\n".join(parts)
 
 
+def _generate_rule_based_chat_reply(user_input, predictions, congestion_summary, junctions_epi, metrics, last_error):
+    """Generate a high-fidelity mock chatbot response using local analytics data if Gemini is offline."""
+    user_input_lower = user_input.lower()
+    
+    # 1. Patrol / deployment queries
+    if any(k in user_input_lower for k in ["deploy", "patrol", "officer", "where to send", "morning", "evening", "shift"]):
+        reply = "👮 **Rule-Based Assistant (Gemini Offline): Patrol Deployment Plan**\n\n"
+        if predictions is not None and not predictions.empty:
+            reply += "Based on prediction risk, here are the top junctions to deploy patrols:\n\n"
+            for _, r in predictions.head(3).iterrows():
+                reply += f"- **{r['junction_name']}**: Rank #{int(r['rank'])} with **{r['predicted_violations']:.0f} predicted violations** ({r['risk_level']} Risk). Recommended patrol during peak hours (7–9 AM, 5–8 PM).\n"
+        else:
+            reply += "No predictions are currently loaded."
+        return reply
+
+    # 2. Congestion / centrality queries
+    if any(k in user_input_lower for k in ["congestion", "centrality", "traffic", "impact", "bottleneck"]):
+        reply = "🚦 **Rule-Based Assistant (Gemini Offline): Congestion Impact Report**\n\n"
+        if congestion_summary is not None and not congestion_summary.empty:
+            reply += "The following junctions show the highest traffic route disruption based on road network centrality analysis:\n\n"
+            for _, r in congestion_summary.head(3).iterrows():
+                reply += f"- **{r['junction_name']}** (Rank #{int(r['rank'])}): Congestion Impact Score: **{r['mean_congestion']:.3f}** (Severity: {r['severity']}, Centrality: {r['avg_centrality']:.3f}). Parking violations here block key alternative routes.\n"
+        else:
+            reply += "Congestion impact data is currently unavailable."
+        return reply
+
+    # 3. Model performance / accuracy queries
+    if any(k in user_input_lower for k in ["accuracy", "accurate", "metric", "perform", "r2", "mae", "rmse", "train", "test"]):
+        reply = "📊 **Rule-Based Assistant (Gemini Offline): XGBoost Model Performance**\n\n"
+        if metrics:
+            reply += (
+                f"- **R² Score:** {metrics.get('test_r2', 'N/A'):.4f} (indicates model explains ~{metrics.get('test_r2', 0)*100:.1f}% of violation variance)\n"
+                f"- **Mean Absolute Error (MAE):** {metrics.get('test_mae', 'N/A'):.2f} violations/day average error\n"
+                f"- **Root Mean Square Error (RMSE):** {metrics.get('test_rmse', 'N/A'):.2f}\n"
+                f"- **Dataset size:** Trained on {metrics.get('train_size', '?')} samples across {metrics.get('n_junctions', '?')} junctions.\n"
+            )
+        else:
+            reply += "Model metrics not available."
+        return reply
+
+    # 4. Junction-specific queries (search for junction names)
+    if junctions_epi is not None and not junctions_epi.empty:
+        for _, r in junctions_epi.iterrows():
+            jname = r['junction_name'].lower()
+            clean_name = jname.replace("-", " ")
+            # Check if user query contains significant part of junction name or the ID
+            parts = [part for part in clean_name.split() if len(part) > 3]
+            if any(part in user_input_lower for part in parts):
+                reply = f"🔍 **Rule-Based Assistant (Gemini Offline): Junction Analysis for {r['junction_name']}**\n\n"
+                reply += (
+                    f"- **Rank:** #{int(r['rank'])} overall\n"
+                    f"- **Enforcement Priority Index (EPI) Score:** **{r['epi_score']:.1f} / 100**\n"
+                    f"- **Total historical violations:** {int(r['total_violations'])}\n"
+                )
+                if predictions is not None and not predictions.empty:
+                    pred_row = predictions[predictions['junction_name'] == r['junction_name']]
+                    if not pred_row.empty:
+                        reply += f"- **Prediction for tomorrow:** {pred_row.iloc[0]['predicted_violations']:.0f} violations ({pred_row.iloc[0]['risk_level']} Risk)\n"
+                return reply
+
+    # 5. Default General Overview
+    reply = (
+        f"⚠️ **Rule-Based Assistant (Gemini Offline)**\n"
+        f"_(The Gemini API call failed with a quota error: `{last_error[:100]}`. Falling back to rule-based response.)_\n\n"
+        f"**System Status & Live Insights:**\n\n"
+    )
+    if predictions is not None and not predictions.empty:
+        top_pred = predictions.iloc[0]
+        reply += f"- **Top Predicted Hotspot:** {top_pred['junction_name']} ({top_pred['predicted_violations']:.0f} predicted violations)\n"
+    if junctions_epi is not None and not junctions_epi.empty:
+        top_epi = junctions_epi.iloc[0]
+        reply += f"- **Top Enforcement Priority (EPI):** {top_epi['junction_name']} (EPI: {top_epi['epi_score']:.1f})\n"
+    if congestion_summary is not None and not congestion_summary.empty:
+        top_cong = congestion_summary.iloc[0]
+        reply += f"- **Top Congestion Impact Corridor:** {top_cong['junction_name']} (Impact: {top_cong['mean_congestion']:.3f})\n"
+    
+    reply += "\n*Ask me about 'patrols', 'congestion', 'accuracy', or a specific junction name for detailed rule-based answers.*"
+    return reply
+
+
 def tab_chatbot(predictions, congestion_summary, junctions_epi, xgb_result):
     """Render the AI Control Room Chatbot tab."""
     st.markdown("### 💬 AI Control Room Assistant")
@@ -1250,9 +1330,13 @@ INSTRUCTIONS:
                         logger.warning(f"Chatbot Gemini API failed for key #{i+1} (%s)", e)
                 
                 if reply is None:
-                    reply = (
-                        f"⚠️ I encountered an error connecting to Gemini (tried {len(keys)} keys): `{last_error[:150]}`.\n\n"
-                        f"Please check your API key(s) in the sidebar and try again."
+                    reply = _generate_rule_based_chat_reply(
+                        user_input=user_input,
+                        predictions=predictions,
+                        congestion_summary=congestion_summary,
+                        junctions_epi=junctions_epi,
+                        metrics=metrics,
+                        last_error=last_error
                     )
 
             st.markdown(reply)
