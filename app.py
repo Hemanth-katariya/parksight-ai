@@ -844,6 +844,17 @@ def tab_junction_deep_dive(df, junctions_epi):
 #  Tab 5 — AI Predictions & Impact
 # ════════════════════════════════════════════════════════════════
 
+@st.cache_data(show_spinner=False, ttl=600)  # Cache briefing for 10 minutes to conserve API quota
+def get_cached_briefing(_predictions, _congestion, _epi, _metrics, api_key, data_hash):
+    return ai_reporter.generate_ai_briefing(
+        predictions=_predictions,
+        congestion=_congestion,
+        epi=_epi,
+        metrics=_metrics,
+        api_key=api_key,
+    )
+
+
 def tab_ai_predictions(df, predictions, xgb_result, congestion_summary, junctions_epi):
     """Render the AI Predictions & Impact tab."""
     # ── Capacity Reclaimed Simulation Metric ───────────────
@@ -897,12 +908,17 @@ def tab_ai_predictions(df, predictions, xgb_result, congestion_summary, junction
     st.markdown("### \U0001F916 AI-Generated Patrol Briefing")
 
     api_key = st.session_state.get('gemini_key', None)
-    briefing = ai_reporter.generate_ai_briefing(
-        predictions=predictions,
-        congestion=congestion_summary,
-        epi=junctions_epi,
-        metrics=metrics,
+    
+    # Generate a lightweight hash of the top 5 junctions to invalidate cache if filtering changes
+    epi_hash = hash(tuple(junctions_epi['junction_name'].head(5))) if junctions_epi is not None and not junctions_epi.empty else 0
+    
+    briefing = get_cached_briefing(
+        _predictions=predictions,
+        _congestion=congestion_summary,
+        _epi=junctions_epi,
+        _metrics=metrics,
         api_key=api_key,
+        data_hash=epi_hash,
     )
 
     # Display the AI report in a styled container
