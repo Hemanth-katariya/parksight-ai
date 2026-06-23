@@ -161,6 +161,15 @@ def generate_ai_briefing(
 
         except Exception as e:
             logger.warning('Gemini API failed (%s) — using rule-based fallback', e)
+            error_msg = str(e)
+            report = _generate_rule_based(predictions, congestion, epi, metrics)
+            return {
+                'report': report,
+                'source': 'Rule-based (Gemini API failed)',
+                'timestamp': timestamp,
+                'data_summary': data_summary,
+                'error': error_msg,
+            }
 
     # ── Rule-based fallback ─────────────────────────────────
     report = _generate_rule_based(predictions, congestion, epi, metrics)

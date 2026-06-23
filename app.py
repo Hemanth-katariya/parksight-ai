@@ -933,9 +933,14 @@ def tab_ai_predictions(df, predictions, xgb_result, congestion_summary, junction
         st.info("💡 **Tip:** Install `fpdf2` in your virtual environment to enable one-click PDF downloading! Run `pip install fpdf2` in your terminal.")
 
 
-    if not api_key:
+    if api_key and briefing.get('error'):
+        st.error(
+            f"❌ **Gemini API Error:** The API call failed: `{briefing['error']}`. "
+            "Using rule-based fallback. Please verify your Gemini API key in the sidebar."
+        )
+    elif not api_key:
         st.info(
-            "\U0001F511 **Tip:** Enter a Gemini API key in the sidebar to get "
+            "🔑 **Tip:** Enter a Gemini API key in the sidebar to get "
             "AI-powered briefings from Google Gemini 2.0 Flash."
         )
 
