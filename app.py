@@ -950,10 +950,9 @@ def tab_ai_predictions(df, predictions, xgb_result, congestion_summary, junction
 
 
     if api_key and briefing.get('error'):
-        st.error(
-            f"❌ **Gemini API Error:** The API call failed: `{briefing['error']}`. "
-            "Using rule-based fallback. Please verify your Gemini API key in the sidebar."
-        )
+        # Silently fall back to the rule-based engine instead of printing huge API errors.
+        # The badge at the top of the report will indicate "🟡 Rule-based (Gemini API failed)".
+        pass
     elif not api_key:
         st.info(
             "🔑 **Tip:** Enter a Gemini API key in the sidebar to get "
